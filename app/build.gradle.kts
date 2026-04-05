@@ -71,7 +71,8 @@ dependencies {
     
     // TensorFlow Lite Support Library
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.foundation:foundation")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

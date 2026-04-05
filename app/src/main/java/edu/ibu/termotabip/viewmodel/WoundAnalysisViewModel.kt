@@ -2,83 +2,86 @@ package edu.ibu.termotabip.viewmodel
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import edu.ibu.termotabip.model.WoundAnalysisModel
 import edu.ibu.termotabip.model.WoundAnalysisUiState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.FileOutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import kotlinx.coroutines.withContext
 
+private const val TAG = "WoundAnalysisViewModel"
 
 class WoundAnalysisViewModel : ViewModel() {
+
     private val _uiState = MutableStateFlow(WoundAnalysisUiState())
     val uiState: StateFlow<WoundAnalysisUiState> = _uiState.asStateFlow()
-    
-    private var woundAnalysisModel: WoundAnalysisModel? = null
-    
+
+    private var model: WoundAnalysisModel? = null
+
+    /** Modeli ilk kez (veya yoksa) başlatır */
     fun initModel(context: Context) {
-        woundAnalysisModel = WoundAnalysisModel(context)
-    }
-    
-    fun analyzeWoundImage(bitmap: Bitmap, context: Context) {
-        viewModelScope.launch {
-            try {
-                _uiState.value = _uiState.value.copy(isLoading = true)
-                
-                // Resmi kaydet
-                val imageFile = saveImageToInternalStorage(bitmap, context)
-                
-                // Modeli başlat (eğer başlatılmadıysa)
-                if (woundAnalysisModel == null) {
-                    initModel(context)
-                }
-                
-                // Analiz et
-                val result = woundAnalysisModel?.analyzeWound(bitmap)
-                
+        if (model != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            model = WoundAnalysisModel(context.applicationContext)
+            val (v, e, r) = model!!.checkAvailability()
+            Log.i(TAG, "Model init tamamlandı — var_yok:$v evre:$e risk:$r")
+            if (!v || !e || !r) {
                 _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    capturedImageUri = imageFile.absolutePath,
-                    analysisResult = result,
-                    errorMessage = null
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = "Analiz sırasında hata oluştu: ${e.message}"
+                    errorMessage = buildString {
+                        append("Eksik model dosyası: ")
+                        if (!v) append("var_yok_tespit.tflite ")
+                        if (!e) append("evre_tespit.tflite ")
+                        if (!r) append("risk_tespit.tflite")
+                    }
                 )
             }
         }
     }
-    
-    private fun saveImageToInternalStorage(bitmap: Bitmap, context: Context): File {
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val fileName = "WOUND_$timeStamp.jpg"
-        val file = File(context.filesDir, fileName)
-        
-        FileOutputStream(file).use { outputStream ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-        }
-        
-        return file
+
+    /** Eski checkModelAvailability çağrısıyla uyumluluk için (MainActivity'de kullanılıyor) */
+    fun checkModelAvailability(context: Context): Boolean {
+        val tmp = WoundAnalysisModel(context)
+        return tmp.allModelsAvailable().also { tmp.close() }
     }
-    
+
+    /**
+     * Bitmap al, 3-model pipeline'ı çalıştır.
+     * [imageUriString] gösterilecek görsel URI'si (opsiyonel)
+     */
+    fun analyzeWoundImage(bitmap: Bitmap, context: Context, imageUriString: String = "") {
+        val currentModel = model ?: WoundAnalysisModel(context.applicationContext).also { model = it }
+
+        _uiState.value = _uiState.value.copy(
+            isLoading      = true,
+            errorMessage   = null,
+            analysisResult = null,
+            capturedImageUri = imageUriString.ifEmpty { _uiState.value.capturedImageUri }
+        )
+
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.Default) {
+                currentModel.analyze(bitmap)
+            }
+            _uiState.value = _uiState.value.copy(
+                isLoading      = false,
+                analysisResult = result,
+                errorMessage   = if (!result.isSuccess) result.errorMessage else null
+            )
+        }
+    }
+
+    /** Ana ekrana (HomeScreen) geri dön — state temizlenir */
+    fun resetState() {
+        _uiState.value = WoundAnalysisUiState()
+    }
+
     override fun onCleared() {
         super.onCleared()
-        woundAnalysisModel?.close()
+        model?.close()
     }
-    
-    fun checkModelAvailability(context: Context): Boolean {
-        if (woundAnalysisModel == null) {
-            woundAnalysisModel = WoundAnalysisModel(context)
-        }
-        return woundAnalysisModel?.isModelAvailable(context) == true
-    }
-} 
+}

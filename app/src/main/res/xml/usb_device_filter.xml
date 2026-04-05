@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    HIKMICRO Mini3 gerçek Vendor ID (logdan doğrulandı):
+    0x2bdf = 11231 decimal
+    0x102  = 258 decimal (PID)
+-->
+<resources>
+    <usb-device vendor-id="11231" product-id="258" />
+</resources>

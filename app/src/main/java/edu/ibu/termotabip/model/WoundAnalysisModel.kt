@@ -12,298 +12,213 @@ import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 import androidx.core.graphics.scale
-import androidx.core.graphics.createBitmap
-import androidx.core.graphics.get
-import androidx.core.graphics.set
 
 private const val TAG = "WoundAnalysisModel"
 
-class WoundAnalysisModel(private val context: Context) {
+// ─────────────────────────────────────────────
+// Tek bir TFLite modelini sarmalayan yardımcı sınıf
+// ─────────────────────────────────────────────
+class TFLiteModel(
+    private val context: Context,
+    private val modelFileName: String
+) {
     private var interpreter: Interpreter? = null
-    private var modelFile = "tflitemodel.tflite"
-    
-    // Model boyutları - Otomatik tespit edilecek
-    private var modelInputWidth = 224
-    private var modelInputHeight = 224
-    private var modelInputChannels = 1  // Gri tonlamalı (1 kanal)
-    private var modelOutputClasses = 3  // Varsayılan sınıf sayısı
-    
-    // Sınıf adları
-    private val classNames = arrayOf("Düşük Risk", "Orta Risk", "Yüksek Risk")
-    
+    var inputWidth = 224
+    var inputHeight = 224
+    var inputChannels = 1
+    var outputClasses = 2
+
     init {
         loadModel()
-        detectModelParameters()
+        detectParameters()
     }
-    
+
     private fun loadModel() {
         try {
-            val options = Interpreter.Options()
-            options.setNumThreads(4)
-            
-            val modelBuffer = loadModelFile(context, modelFile)
-            interpreter = Interpreter(modelBuffer, options)
-            
-            Log.d(TAG, "Model başarıyla yüklendi: $modelFile")
+            val options = Interpreter.Options().apply { setNumThreads(4) }
+            interpreter = Interpreter(loadModelFile(), options)
+            Log.d(TAG, "$modelFileName başarıyla yüklendi")
         } catch (e: Exception) {
-            Log.e(TAG, "Model yüklenirken hata oluştu: ${e.message}")
+            Log.e(TAG, "$modelFileName yüklenemedi: ${e.message}")
         }
     }
-    
-    private fun loadModelFile(context: Context, fileName: String): MappedByteBuffer {
-        val fileDescriptor = context.assets.openFd(fileName)
-        val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-        val fileChannel = inputStream.channel
-        val startOffset = fileDescriptor.startOffset
-        val declaredLength = fileDescriptor.declaredLength
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+
+    private fun loadModelFile(): MappedByteBuffer {
+        val fd = context.assets.openFd(modelFileName)
+        return FileInputStream(fd.fileDescriptor).channel
+            .map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.declaredLength)
     }
-    
-    private fun detectModelParameters() {
+
+    private fun detectParameters() {
+        val interp = interpreter ?: return
         try {
-            interpreter?.let { interp ->
-                // Giriş boyutlarını tespit et
-                val inputTensor = interp.getInputTensor(0)
-                val inputShape = inputTensor.shape()
-                
-                if (inputShape.size >= 3) {
-                    modelInputHeight = inputShape[1]
-                    modelInputWidth = inputShape[2]
-                    modelInputChannels = if (inputShape.size > 3) inputShape[3] else 1
-                }
-                
-                // Çıktı boyutlarını tespit et
-                val outputTensor = interp.getOutputTensor(0)
-                val outputShape = outputTensor.shape()
-                
-                // Çıktı şekli [1, sınıf_sayısı] veya [sınıf_sayısı] olabilir
-                modelOutputClasses = if (outputShape.size > 1) outputShape[1] else outputShape[0]
-                
-                Log.d(TAG, "Model parametreleri tespit edildi: " +
-                        "Giriş: ${inputShape.contentToString()}, " +
-                        "Çıktı: ${outputShape.contentToString()}, " +
-                        "Sınıf sayısı: $modelOutputClasses")
-                
-                // Veri tiplerini kontrol et
-                Log.d(TAG, "Giriş veri tipi: ${inputTensor.dataType()}, " +
-                        "Çıktı veri tipi: ${outputTensor.dataType()}")
+            val inputShape = interp.getInputTensor(0).shape()
+            val outputShape = interp.getOutputTensor(0).shape()
+
+            if (inputShape.size >= 3) {
+                inputHeight = inputShape[1]
+                inputWidth  = inputShape[2]
+                inputChannels = if (inputShape.size > 3) inputShape[3] else 1
             }
+            outputClasses = if (outputShape.size > 1) outputShape[1] else outputShape[0]
+
+            Log.d(TAG, "$modelFileName — giriş:${inputShape.contentToString()}, " +
+                    "çıktı:${outputShape.contentToString()}, " +
+                    "tip:${interp.getInputTensor(0).dataType()}")
         } catch (e: Exception) {
-            Log.e(TAG, "Model parametreleri tespit edilirken hata: ${e.message}")
+            Log.e(TAG, "$modelFileName parametre tespitinde hata: ${e.message}")
         }
     }
-    
-    fun analyzeWound(bitmap: Bitmap): WoundAnalysisResult {
+
+    /** Bitmap al, FloatArray döndür (softmax çıktı varsayılır) */
+    fun run(bitmap: Bitmap): FloatArray {
         if (interpreter == null) {
-            return WoundAnalysisResult(
-                woundLevel = -1,
-                confidence = 0f,
-                isSuccess = false,
-                errorMessage = "Model henüz yüklenmedi"
-            )
+            Log.e(TAG, "$modelFileName: interpreter null, sıfır döndürülüyor")
+            return FloatArray(outputClasses)
         }
-        
-        try {
-            // Görüntüyü model boyutuna yeniden boyutlandır
-            val processedBitmap = preprocessImage(bitmap)
-            
-            // ByteBuffer'a dönüştür
-            val inputBuffer = convertBitmapToByteBuffer(processedBitmap)
-            
-            // Çıktı veri tipini kontrol et
-            val isUint8Output = interpreter?.getOutputTensor(0)?.dataType() == DataType.UINT8
-            
-            // Çıktı için uygun buffer oluştur
-            val outputBuffer: Any = if (isUint8Output) {
-                ByteBuffer.allocateDirect(modelOutputClasses).order(ByteOrder.nativeOrder())
-            } else {
-                Array(1) { FloatArray(modelOutputClasses) }
-            }
-            
-            // Modeli çalıştır
-            Log.d(TAG, "Model çalıştırılıyor... Buffer pozisyonu: ${inputBuffer.position()}, Kapasite: ${inputBuffer.capacity()}")
-            interpreter?.run(inputBuffer, outputBuffer)
-            
-            // Sonuçları işle
-            var maxIndex = 0
-            var maxConfidence = 0f
-            
-            if (isUint8Output) {
-                val byteBuffer = outputBuffer as ByteBuffer
-                byteBuffer.rewind()
-                
-                Log.d(TAG, "Model çıktıları (UINT8):")
-                for (i in 0 until modelOutputClasses) {
-                    val value = byteBuffer.get().toInt() and 0xFF
-                    val confidence = value / 255.0f
-                    
-                    // Sadece ilk 10 ve en yüksek değerleri logla
-                    if (i < 10 || confidence > 0.1f) {
-                        Log.d(TAG, "Sınıf $i: $value (${confidence * 100.0f}%)")
-                    }
-                    
-                    if (confidence > maxConfidence) {
-                        maxConfidence = confidence
-                        maxIndex = i
-                    }
-                }
-            } else {
-                val results = (outputBuffer as Array<FloatArray>)[0]
-                
-                Log.d(TAG, "Model çıktıları (FLOAT32):")
-                for (i in results.indices) {
-                    val confidence = results[i]
-                    
-                    // Sadece ilk 10 ve en yüksek değerleri logla
-                    if (i < 10 || confidence > 0.1f) {
-                        Log.d(TAG, "Sınıf $i: $confidence (${confidence * 100.0f}%)")
-                    }
-                    
-                    if (confidence > maxConfidence) {
-                        maxConfidence = confidence
-                        maxIndex = i
-                    }
-                }
-            }
-            
-            // Eğer çok fazla sınıf varsa ve bizim modelimiz 3 sınıflı ise
-            // Sınıf indeksini 3'e göre modülo alarak düzeltebiliriz
-            val actualClassCount = 3 // Gerçek sınıf sayınız
-            val mappedIndex = if (modelOutputClasses > actualClassCount) {
-                maxIndex % actualClassCount
-            } else {
-                maxIndex
-            }
-            
-            Log.d(TAG, "Analiz sonucu: ${classNames.getOrElse(mappedIndex) { "Bilinmeyen (Seviye $maxIndex)" }}, Güven: $maxConfidence")
-            
-            return WoundAnalysisResult(
-                woundLevel = mappedIndex,
-                confidence = maxConfidence,
-                isSuccess = true
-            )
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Analiz sırasında hata oluştu: ${e.message}")
-            e.printStackTrace()
-            
-            return WoundAnalysisResult(
-                woundLevel = -1,
-                confidence = 0f,
-                isSuccess = false,
-                errorMessage = "Analiz sırasında hata: ${e.message}"
-            )
-        }
-    }
-    
-    private fun preprocessImage(bitmap: Bitmap): Bitmap {
-        // Görüntüyü model boyutuna yeniden boyutlandır
-        val resizedBitmap = bitmap.scale(modelInputWidth, modelInputHeight)
-        
-        // Görüntüyü gri tonlamaya dönüştür (eğer model gri tonlamalı ise)
-        return if (modelInputChannels == 1) {
-            convertToGrayscale(resizedBitmap)
+        val resized = bitmap.scale(inputWidth, inputHeight)
+        val buffer  = toByteBuffer(resized)
+        val isUint8Output = interpreter?.getOutputTensor(0)?.dataType() == DataType.UINT8
+
+        return if (isUint8Output) {
+            val out = ByteBuffer.allocateDirect(outputClasses).order(ByteOrder.nativeOrder())
+            interpreter?.run(buffer, out)
+            out.rewind()
+            FloatArray(outputClasses) { (out.get().toInt() and 0xFF) / 255.0f }
         } else {
-            resizedBitmap
+            val out = Array(1) { FloatArray(outputClasses) }
+            interpreter?.run(buffer, out)
+            out[0]
         }
     }
-    
-    private fun convertToGrayscale(bitmap: Bitmap): Bitmap {
-        val width = bitmap.width
-        val height = bitmap.height
-        val grayBitmap = createBitmap(width, height)
-        
-        for (x in 0 until width) {
-            for (y in 0 until height) {
-                val pixel = bitmap[x, y]
-                
-                // Gri tonlama formülü: Y = 0.299R + 0.587G + 0.114B
-                val grayValue = (Color.red(pixel) * 0.299f + 
-                               Color.green(pixel) * 0.587f + 
-                               Color.blue(pixel) * 0.114f).toInt()
-                
-                // Alfa kanalını koru
-                val alpha = Color.alpha(pixel)
-                val grayPixel = Color.argb(alpha, grayValue, grayValue, grayValue)
-                grayBitmap[x, y] = grayPixel
-            }
-        }
-        
-        return grayBitmap
-    }
-    
-    private fun convertBitmapToByteBuffer(bitmap: Bitmap): ByteBuffer {
-        // Modelin beklediği veri tipini kontrol et
+
+    private fun toByteBuffer(bitmap: Bitmap): ByteBuffer {
         val isUint8 = interpreter?.getInputTensor(0)?.dataType() == DataType.UINT8
-        
-        // Doğru boyutta ByteBuffer oluştur
-        val bytesPerChannel = if (isUint8) 1 else 4
-        val inputBuffer = ByteBuffer.allocateDirect(modelInputWidth * modelInputHeight * modelInputChannels * bytesPerChannel)
+        val bytes   = if (isUint8) 1 else 4
+        val buf = ByteBuffer
+            .allocateDirect(inputWidth * inputHeight * inputChannels * bytes)
             .order(ByteOrder.nativeOrder())
-        
-        val pixels = IntArray(modelInputWidth * modelInputHeight)
-        bitmap.getPixels(pixels, 0, modelInputWidth, 0, 0, modelInputWidth, modelInputHeight)
-        
-        inputBuffer.rewind()
-        for (pixel in pixels) {
+
+        val pixels = IntArray(inputWidth * inputHeight)
+        bitmap.getPixels(pixels, 0, inputWidth, 0, 0, inputWidth, inputHeight)
+
+        for (px in pixels) {
+            val r = Color.red(px);  val g = Color.green(px);  val b = Color.blue(px)
+            val gray = r * 0.299f + g * 0.587f + b * 0.114f
             if (isUint8) {
-                // UINT8 formatı için (0-255 aralığında)
-                if (modelInputChannels == 1) {
-                    // Gri tonlamalı (1 kanal)
-                    val grayValue = (Color.red(pixel) * 0.299f + 
-                                    Color.green(pixel) * 0.587f + 
-                                    Color.blue(pixel) * 0.114f).toInt()
-                    inputBuffer.put(grayValue.toByte())
-                } else {
-                    // RGB (3 kanal)
-                    inputBuffer.put(Color.red(pixel).toByte())
-                    inputBuffer.put(Color.green(pixel).toByte())
-                    inputBuffer.put(Color.blue(pixel).toByte())
-                }
+                if (inputChannels == 1) buf.put(gray.toInt().toByte())
+                else { buf.put(r.toByte()); buf.put(g.toByte()); buf.put(b.toByte()) }
             } else {
-                // FLOAT32 formatı için (0-1 aralığında)
-                if (modelInputChannels == 1) {
-                    // Gri tonlamalı (1 kanal)
-                    val grayValue = (Color.red(pixel) * 0.299f + 
-                                    Color.green(pixel) * 0.587f + 
-                                    Color.blue(pixel) * 0.114f) / 255.0f
-                    inputBuffer.putFloat(grayValue)
-                } else {
-                    // RGB (3 kanal)
-                    inputBuffer.putFloat(Color.red(pixel) / 255.0f)
-                    inputBuffer.putFloat(Color.green(pixel) / 255.0f)
-                    inputBuffer.putFloat(Color.blue(pixel) / 255.0f)
-                }
+                if (inputChannels == 1) buf.putFloat(gray / 255f)
+                else { buf.putFloat(r / 255f); buf.putFloat(g / 255f); buf.putFloat(b / 255f) }
             }
         }
-        
-        inputBuffer.rewind()
-        Log.d(TAG, "ByteBuffer oluşturuldu: Pozisyon=${inputBuffer.position()}, Limit=${inputBuffer.limit()}, " +
-                "Kapasite=${inputBuffer.capacity()}, Veri tipi=${if (isUint8) "UINT8" else "FLOAT32"}")
-        return inputBuffer
+        buf.rewind()
+        return buf
     }
-    
-    fun close() {
-        interpreter?.close()
-        interpreter = null
+
+    fun isAvailable(): Boolean = try {
+        context.assets.list("")?.contains(modelFileName) == true
+    } catch (e: Exception) { false }
+
+    fun close() { interpreter?.close(); interpreter = null }
+}
+
+// ─────────────────────────────────────────────
+// 3 modeli yöneten ana sınıf
+// Pipeline: var_yok → (VAR) evre_tespit | (YOK) risk_tespit
+// ─────────────────────────────────────────────
+class WoundAnalysisModel(private val context: Context) {
+
+    companion object {
+        const val MODEL_VAR_YOK = "var_yok_tespit.tflite"
+        const val MODEL_EVRE    = "evre_tespit.tflite"
+        const val MODEL_RISK    = "risk_tespit.tflite"
     }
-    
-    // Model dosyasının varlığını kontrol eden yardımcı metod
-    fun isModelAvailable(context: Context): Boolean {
+
+    private val varYokModel = TFLiteModel(context, MODEL_VAR_YOK)
+    private val evreModel   = TFLiteModel(context, MODEL_EVRE)
+    private val riskModel   = TFLiteModel(context, MODEL_RISK)
+
+    /**
+     * Ana analiz metodu.
+     * 1) var_yok_tespit çalıştır
+     * 2) Yara varsa → evre_tespit; yoksa → risk_tespit
+     */
+    fun analyze(bitmap: Bitmap): WoundAnalysisResult {
         return try {
-            val assetManager = context.assets
-            val files = assetManager.list("")
-            val exists = files?.contains(modelFile) == true
-            Log.d(TAG, "Model dosyası kontrol ediliyor: $modelFile, Mevcut: $exists")
-            if (exists) {
-                Log.d(TAG, "Assets içindeki dosyalar: ${files?.joinToString()}")
+            // ── Adım 1: Var / Yok ─────────────────────────
+            val varYokOut = varYokModel.run(bitmap)
+            logOutputs("var_yok", varYokOut)
+
+            // Varsayım: index 0 = YOK, index 1 = VAR
+            // Modelinizin eğitimindeki sınıf sırasına göre ayarlayın!
+            val hasWound = if (varYokOut.size >= 2) {
+                varYokOut[0] > varYokOut[1]  // index 0 = Yara_Var, index 1 = Yara_Yok
             } else {
-                Log.e(TAG, "Model dosyası bulunamadı! Assets içindeki dosyalar: ${files?.joinToString()}")
+                varYokOut[0] > 0.5f
             }
-            exists
+            val presenceConf = if (varYokOut.size >= 2) {
+                if (hasWound) varYokOut[0] else varYokOut[1]
+            } else varYokOut[0]
+
+            val presenceResult = WoundPresenceResult(hasWound, presenceConf)
+            Log.i(TAG, "Var/Yok → ${if (hasWound) "VAR" else "YOK"} (%.3f)".format(presenceConf))
+
+            if (hasWound) {
+                // ── Adım 2a: Evre tespiti ─────────────────
+                val evreOut = evreModel.run(bitmap)
+                logOutputs("evre", evreOut)
+                val evreIdx  = evreOut.indices.maxByOrNull { evreOut[it] } ?: 0
+                val evreConf = evreOut[evreIdx]
+                Log.i(TAG, "Evre → ${evreIdx + 1} (%.3f)".format(evreConf))
+
+                WoundAnalysisResult(
+                    presenceResult = presenceResult,
+                    stageResult    = WoundStageResult(evreIdx, evreConf),
+                    isSuccess      = true
+                )
+            } else {
+                // ── Adım 2b: Risk tespiti ─────────────────
+                val riskOut = riskModel.run(bitmap)
+                logOutputs("risk", riskOut)
+                val riskIdx  = riskOut.indices.maxByOrNull { riskOut[it] } ?: 0
+                val riskConf = riskOut[riskIdx]
+                Log.i(TAG, "Risk → $riskIdx (%.3f)".format(riskConf))
+
+                WoundAnalysisResult(
+                    presenceResult = presenceResult,
+                    riskResult     = WoundRiskResult(riskIdx, riskConf),
+                    isSuccess      = true
+                )
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Model dosyası kontrol edilirken hata: ${e.message}")
-            false
+            Log.e(TAG, "Analiz hatası: ${e.message}")
+            WoundAnalysisResult(isSuccess = false, errorMessage = "Analiz hatası: ${e.message}")
         }
     }
-} 
+
+    private fun logOutputs(name: String, arr: FloatArray) {
+        arr.forEachIndexed { i, v -> Log.d(TAG, "  $name[$i] = %.4f".format(v)) }
+    }
+
+    /** Her üç model dosyasının assets'te var olup olmadığını kontrol eder */
+    fun checkAvailability(): Triple<Boolean, Boolean, Boolean> {
+        val v = varYokModel.isAvailable()
+        val e = evreModel.isAvailable()
+        val r = riskModel.isAvailable()
+        Log.i(TAG, "Model durumları → var_yok:$v | evre:$e | risk:$r")
+        return Triple(v, e, r)
+    }
+
+    fun allModelsAvailable(): Boolean {
+        val (v, e, r) = checkAvailability()
+        return v && e && r
+    }
+
+    fun close() {
+        varYokModel.close()
+        evreModel.close()
+        riskModel.close()
+    }
+}
