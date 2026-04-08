@@ -154,14 +154,7 @@ fun HomeScreen(
                 onClick  = onGalleryClick
             )
             Spacer(Modifier.height(12.dp))
-            ClinicalActionCard(
-                emoji    = "📸",
-                title    = "Termal Kamera",
-                subtitle = "HIKMICRO Mini3 ile görüntü al",
-                accent   = ClinicalTeal,
-                onClick  = onThermalCameraClick
-            )
-            Spacer(Modifier.height(12.dp))
+
 
             // Geçmiş butonu — daha sade
             OutlinedButton(

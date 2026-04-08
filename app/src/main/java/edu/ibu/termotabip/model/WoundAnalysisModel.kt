@@ -131,14 +131,16 @@ class TFLiteModel(
 class WoundAnalysisModel(private val context: Context) {
 
     companion object {
-        const val MODEL_VAR_YOK = "var_yok_tespit.tflite"
-        const val MODEL_EVRE    = "evre_tespit.tflite"
-        const val MODEL_RISK    = "risk_tespit.tflite"
+        const val MODEL_VAR_YOK = "wound_detection.tflite"
+        const val MODEL_EVRE    = "wound_stage.tflite"
+        const val MODEL_RISK    = "wound_risk.tflite"
+
     }
 
     private val varYokModel = TFLiteModel(context, MODEL_VAR_YOK)
     private val evreModel   = TFLiteModel(context, MODEL_EVRE)
     private val riskModel   = TFLiteModel(context, MODEL_RISK)
+
 
     /**
      * Ana analiz metodu.

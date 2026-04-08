@@ -32,6 +32,7 @@ import edu.ibu.termotabip.history.AnalysisHistoryManager
 import edu.ibu.termotabip.history.AnalysisRecord
 import edu.ibu.termotabip.ui.theme.*
 import java.io.File
+import androidx.compose.material.icons.filled.CheckCircle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -206,8 +207,8 @@ private fun StatPill(label: String, value: String, color: Color) {
 
 // ── Kayıt kartı ───────────────────────────────────────────────────────────
 @Composable
+
 private fun HistoryRecordCard(record: AnalysisRecord, onDelete: () -> Unit) {
-    // Renk belirleme
     val accent = when {
         record.hasWound && (record.stage ?: 0) >= 2 -> ClinicalRed
         record.hasWound                              -> ThermalAmber
@@ -222,11 +223,11 @@ private fun HistoryRecordCard(record: AnalysisRecord, onDelete: () -> Unit) {
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Box(Modifier.fillMaxWidth()) {
-            // Sol aksan çizgisi
             Box(
                 Modifier
                     .width(3.dp)
-                    .height(88.dp)
+                    // Alan ölçümü varsa kutu biraz daha uzun olur, yoksa kısa kalır
+                    .height(if (record.woundArea != null) 100.dp else 88.dp)
                     .clip(RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp))
                     .background(accent)
             )
@@ -238,7 +239,6 @@ private fun HistoryRecordCard(record: AnalysisRecord, onDelete: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Küçük görsel
                 if (record.imageUri.isNotBlank()) {
                     val model = if (record.imageUri.startsWith("content://")) record.imageUri
                     else File(record.imageUri)
@@ -260,9 +260,7 @@ private fun HistoryRecordCard(record: AnalysisRecord, onDelete: () -> Unit) {
                     ) { Text("📷", fontSize = 22.sp) }
                 }
 
-                // Bilgiler
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // Sonuç rozeti
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -273,14 +271,26 @@ private fun HistoryRecordCard(record: AnalysisRecord, onDelete: () -> Unit) {
                                 .background(accent.copy(0.15f))
                                 .padding(horizontal = 7.dp, vertical = 2.dp)
                         ) {
-                            Text(record.summary, color = accent, fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold)
+                            Text(record.summary, color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
-                        Text("%${record.confidencePct}", fontSize = 12.sp,
-                            color = accent, fontWeight = FontWeight.SemiBold)
+                        Text("%${record.confidencePct}", fontSize = 12.sp, color = accent, fontWeight = FontWeight.SemiBold)
                     }
 
                     Text(record.date, fontSize = 12.sp, color = TextSecondary)
+
+                    // Alan ölçümü varsa gösterir
+                    if (record.woundArea != null && record.woundArea!! > 0.0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ClinicalTeal, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = String.format("Alan: %.2f cm² (%.1f x %.1f cm)", record.woundArea, record.woundWidth, record.woundHeight),
+                                fontSize = 11.sp,
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
 
                     if (record.username.isNotBlank()) {
                         Row(
@@ -288,19 +298,16 @@ private fun HistoryRecordCard(record: AnalysisRecord, onDelete: () -> Unit) {
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Box(Modifier.size(4.dp).background(TextHint, CircleShape))
-                            Text(record.username, fontSize = 11.sp, color = TextHint,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(record.username, fontSize = 11.sp, color = TextHint, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
 
-                // Sil butonu
                 IconButton(
                     onClick = onDelete,
                     modifier = Modifier.size(32.dp)
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = "Sil",
-                        tint = TextHint, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Delete, contentDescription = "Sil", tint = TextHint, modifier = Modifier.size(18.dp))
                 }
             }
         }

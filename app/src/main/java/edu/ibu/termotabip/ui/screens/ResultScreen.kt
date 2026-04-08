@@ -123,16 +123,19 @@ fun ResultScreen(
 
     var showReportDialog by remember { mutableStateOf(false) }
     var savedToHistory   by remember { mutableStateOf(false) }
+    var showMeasurementDialog by remember { mutableStateOf(false) }
+    var savedRecordId by remember { mutableStateOf<String?>(null) }
 
     // Analiz bitince otomatik geçmişe kaydet (sadece bir kez)
     LaunchedEffect(result) {
         if (result != null && result.isSuccess && !savedToHistory) {
-            AnalysisHistoryManager.save(
+            val record=AnalysisHistoryManager.save(
                 context   = context,
                 result    = result,
                 imageUri  = uiState.capturedImageUri ?: "",
                 username  = currentUser?.username ?: ""
             )
+            savedRecordId = record.id
             savedToHistory = true
         }
     }
@@ -208,6 +211,24 @@ fun ResultScreen(
                 }
             }
 
+            if (result != null && result.isSuccess && result.presenceResult?.hasWound == true) {
+                item {
+                    Button(
+                        onClick = {
+                            showMeasurementDialog = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp), // Altındaki PDF butonuyla arasına boşluk koyar
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary // Senin temanın mavi/turuncu ana rengini alır
+                        )
+                    ) {
+                        Text("Yara Boyutunu Ölç", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                    }
+                }
+            }
+
             // PDF rapor butonu
             item {
                 OutlinedButton(
@@ -216,6 +237,8 @@ fun ResultScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("PDF Rapor Oluştur") }
             }
+
+
 
             // Yeni analiz butonu
             item {
@@ -238,6 +261,14 @@ fun ResultScreen(
                 result       = result,
                 thermalBitmap = null,
                 onDismiss    = { showReportDialog = false }
+            )
+        }
+
+        if (showMeasurementDialog && uiState.capturedImageUri != null) {
+            WoundMeasurementDialog(
+                imageUri = uiState.capturedImageUri!!,
+                recordId = savedRecordId,
+                onDismiss = { showMeasurementDialog = false }
             )
         }
     }

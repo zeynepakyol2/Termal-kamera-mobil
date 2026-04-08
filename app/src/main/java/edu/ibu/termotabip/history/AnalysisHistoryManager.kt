@@ -30,10 +30,14 @@ data class AnalysisRecord(
     val stage       : Int?   = null,
     val stageConf   : Float? = null,
     val stageName   : String? = null,
+    var woundArea: Double? = null,
+    var woundWidth: Double? = null,
+    var woundHeight: Double? = null,
     // Yara yoksa
     val riskLevel   : Int?   = null,
     val riskConf    : Float? = null,
     val riskName    : String? = null
+
 ) {
     /** Kısa özet metni */
     val summary: String get() = when {
@@ -57,7 +61,9 @@ object AnalysisHistoryManager {
         imageUri  : String,
         username  : String
     ): AnalysisRecord {
-        val date = SimpleDateFormat("dd MMMM yyyy HH:mm", Locale("tr")).format(Date())
+        val formatter = SimpleDateFormat("dd MMMM yyyy HH:mm", Locale("tr"))
+        formatter.timeZone = java.util.TimeZone.getTimeZone("Europe/Istanbul") //+3 ekledik
+        val date = formatter.format(Date())
         val record = AnalysisRecord(
             id           = UUID.randomUUID().toString(),
             date         = date,
@@ -80,6 +86,20 @@ object AnalysisHistoryManager {
         saveAll(context, list)
         Log.i(TAG, "Kaydedildi: ${record.id} — ${record.summary}")
         return record
+    }
+
+    //----------
+
+    fun updateMeasurement(context: Context, id: String, area: Double, width: Double, height: Double) {
+        val list = loadAll(context).toMutableList()
+        val index = list.indexOfFirst { it.id == id }
+        if (index != -1) {
+            list[index].woundArea = area
+            list[index].woundWidth = width
+            list[index].woundHeight = height
+            saveAll(context, list)
+            Log.i(TAG, "Ölçüm güncellendi: ${list[index].id}")
+        }
     }
 
     // ── Tümünü yükle ─────────────────────────────────────────────────────
@@ -155,6 +175,9 @@ object AnalysisHistoryManager {
         r.riskLevel?.let   { put("riskLevel", it) }
         r.riskConf?.let    { put("riskConf",  it) }
         r.riskName?.let    { put("riskName",  it) }
+        r.woundArea?.let { put("woundArea", it) }
+        r.woundWidth?.let { put("woundWidth", it) }
+        r.woundHeight?.let { put("woundHeight", it) }
     }
 
     private fun parseRecord(o: JSONObject) = AnalysisRecord(
@@ -170,6 +193,9 @@ object AnalysisHistoryManager {
         stageName    = if (o.has("stageName")) o.getString("stageName")         else null,
         riskLevel    = if (o.has("riskLevel")) o.getInt("riskLevel")            else null,
         riskConf     = if (o.has("riskConf"))  o.getDouble("riskConf").toFloat()  else null,
-        riskName     = if (o.has("riskName"))  o.getString("riskName")          else null
+        riskName     = if (o.has("riskName"))  o.getString("riskName") else null,
+        woundArea = if (o.has("woundArea")) o.getDouble("woundArea") else null,
+        woundWidth = if (o.has("woundWidth")) o.getDouble("woundWidth") else null,
+        woundHeight = if (o.has("woundHeight")) o.getDouble("woundHeight") else null
     )
 }

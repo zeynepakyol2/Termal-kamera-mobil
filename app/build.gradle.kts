@@ -65,6 +65,10 @@ dependencies {
     // TensorFlow Lite
     implementation(libs.tensorflow.lite)
     implementation(libs.tensorflow.lite.support)
+
+    implementation("com.quickbirdstudios:opencv:4.5.3.0")
+
+    implementation("androidx.compose.material:material-icons-extended:1.6.0")
     
     // Coil - Resim işleme
     implementation(libs.coil.compose)

@@ -29,6 +29,11 @@ private const val PREF_ONBOARDING = "onboarding_done"
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!org.opencv.android.OpenCVLoader.initDebug()) {
+            println("HATA: OpenCV başlatılamadı!")
+        } else {
+            println("BAŞARILI: OpenCV emrinize amade!")
+        }
         enableEdgeToEdge()
         setContent {
             TermoTabipTheme {
