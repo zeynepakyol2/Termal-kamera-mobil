@@ -41,6 +41,7 @@ android {
     packagingOptions {
         resources.excludes.add("META-INF/*")
     }
+
 }
 
 dependencies {
