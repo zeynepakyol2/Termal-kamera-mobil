@@ -57,8 +57,3 @@ git clone https://github.com/zeynepakyol2/TermalKameraMobil.git
 3. Gerekirse görüntü üzerinde manuel olarak yara alanını işaretleyin
 4. Yara boyutu ve analiz sonucu (tespit, evre, risk seviyesi) ekranda gösterilir
 
-
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:6A5ACD,100:00BFFF&height=100&section=footer"/>
-</p>
