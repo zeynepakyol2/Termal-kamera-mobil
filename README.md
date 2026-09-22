@@ -50,7 +50,7 @@ git clone https://github.com/zeynepakyol2/TermalKameraMobil.git
 2. Gradle senkronizasyonunun tamamlanmasını bekleyin
 3. Bir Android cihaz veya emülatör seçip uygulamayı çalıştırın
 
-## ▶️ Kullanım
+## Kullanım
 
 1. Uygulamayı açın ve termal görüntüyü yükleyin
 2. Yapay zeka modeli görüntüyü otomatik analiz eder
