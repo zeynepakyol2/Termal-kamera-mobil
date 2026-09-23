@@ -35,6 +35,7 @@ android {
     }
     buildFeatures {
         compose = true
+        mlModelBinding = true
     }
     
     // ML Model için aşağıdaki ayarları ekliyoruz
@@ -65,7 +66,7 @@ dependencies {
     
     // TensorFlow Lite
     implementation(libs.tensorflow.lite)
-    implementation(libs.tensorflow.lite.support)
+
 
     implementation("com.quickbirdstudios:opencv:4.5.3.0")
 
@@ -75,7 +76,6 @@ dependencies {
     implementation(libs.coil.compose)
     
     // TensorFlow Lite Support Library
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.foundation:foundation")
     testImplementation(libs.junit)

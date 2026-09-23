@@ -19,9 +19,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -29,6 +31,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.rememberAsyncImagePainter
 import edu.ibu.termotabip.history.AnalysisHistoryManager
 import java.io.File
+import androidx.compose.material.icons.filled.Undo
 
 @Composable
 fun WoundMeasurementDialog(
@@ -43,6 +46,11 @@ fun WoundMeasurementDialog(
     var finalArea by remember { mutableStateOf<Double?>(null) }
     var finalWidth by remember { mutableStateOf<Double?>(null) }
     var finalHeight by remember { mutableStateOf<Double?>(null) }
+
+    // Kullanıcının ekranda dokunduğu Canvas'ın GERÇEK piksel boyutu.
+    // Sabit 1080x720 varsayımı yerine bunu kullanıyoruz; farklı ekran/cihazlarda
+    // ölçüm hatası yapmamak için şart.
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -59,7 +67,7 @@ fun WoundMeasurementDialog(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding(),
-                horizontalAlignment = Alignment.CenterHorizontally // Tüm içeriği yatayda ortalar
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // --- ÜST BAR ---
                 Row(
@@ -88,6 +96,7 @@ fun WoundMeasurementDialog(
                         .weight(1f)
                         .fillMaxWidth()
                         .background(Color.Black)
+                        .onSizeChanged { canvasSize = it }
                 ) {
                     Image(
                         painter = rememberAsyncImagePainter(
@@ -125,9 +134,9 @@ fun WoundMeasurementDialog(
                 // --- SİMETRİK YÜZEN ALT PANEL ---
                 Card(
                     modifier = Modifier
-                        .padding(horizontal = 24.dp) // Sağ ve sol boşlukları eşitlemek için
-                        .padding(top = 20.dp, bottom = 40.dp) // Alt ve üst boşluk
-                        .fillMaxWidth(), // Kartın kendisi dış paddinglerden sonra alanı doldurur
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 20.dp, bottom = 40.dp)
+                        .fillMaxWidth(),
                     shape = RoundedCornerShape(28.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -137,7 +146,7 @@ fun WoundMeasurementDialog(
                             .navigationBarsPadding()
                             .padding(20.dp)
                             .fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally // Butonu ve metni kart içinde ortalar
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
                             text = if (points.isEmpty()) "Sınırları belirlemek için dokunun" else "${points.size} nokta seçildi",
@@ -148,54 +157,154 @@ fun WoundMeasurementDialog(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Button(
-                            onClick = {
-                                try {
-                                    calculatedResult = "Hesaplanıyor..."
-                                    val bitmap = if (imageUri.startsWith("content://")) {
-                                        @Suppress("DEPRECATION")
-                                        android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, android.net.Uri.parse(imageUri))
-                                    } else {
-                                        android.graphics.BitmapFactory.decodeFile(File(imageUri).absolutePath)
-                                    }
-
-                                    if (bitmap != null) {
-                                        val bmp32 = bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
-                                        val mmToPixelRatio = edu.ibu.termotabip.utils.RulerUtils.calculatePixelToMmRatioFromNumbers(bmp32)
-
-                                        if (mmToPixelRatio > 0) {
-                                            val displayedScreenWidth = 1080.0
-                                            val displayedScreenHeight = 720.0
-                                            val scaleX = bitmap.width.toDouble() / displayedScreenWidth
-                                            val scaleY = bitmap.height.toDouble() / displayedScreenHeight
-                                            val scaleFactor = Math.min(scaleX, scaleY)
-
-                                            val pixelAreaOnScreen = calculatePolygonAreaInPixels(points)
-                                            val pixelAreaOnOriginalBitmap = pixelAreaOnScreen * (scaleFactor * scaleFactor)
-                                            val realAreaMm2 = pixelAreaOnOriginalBitmap * (mmToPixelRatio * mmToPixelRatio)
-
-                                            finalArea = realAreaMm2 / 100.0
-                                            val minX = points.minOf { it.x }; val maxX = points.maxOf { it.x }
-                                            val minY = points.minOf { it.y }; val maxY = points.maxOf { it.y }
-                                            finalWidth = ((maxX - minX) * scaleFactor * mmToPixelRatio) / 10.0
-                                            finalHeight = ((maxY - minY) * scaleFactor * mmToPixelRatio) / 10.0
-
-                                            calculatedResult = String.format("Gerçek Alan: %.2f cm²\nBoyutlar: %.1f x %.1f cm", finalArea, finalWidth, finalHeight)
-                                        } else {
-                                            calculatedResult = "HATA: Referans cetveli tespit edilemedi."
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    calculatedResult = "HATA: İşlem başarısız."
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth(0.9f) // Kartın genişliğinin %90'ını kaplar, böylece içten de boşluklu durur
-                                .height(54.dp),
-                            enabled = points.size > 2,
-                            shape = RoundedCornerShape(16.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Alanı Hesapla", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+
+                            // ── SON HAMLEYİ GERİ AL ──
+                            OutlinedButton(
+                                onClick = {
+                                    if (points.isNotEmpty()) {
+                                        points.removeAt(points.lastIndex)
+                                        calculatedResult = null
+                                    }
+                                },
+                                enabled = points.isNotEmpty(),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(54.dp),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Undo,
+                                    contentDescription = "Son hamleyi geri al"
+                                )
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                Text(
+                                    text = "Geri Al",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            // ── ALANI HESAPLA ──
+                            Button(
+                                onClick = {
+                                    try {
+                                        calculatedResult = "Hesaplanıyor..."
+
+                                        val bitmap = if (imageUri.startsWith("content://")) {
+                                            @Suppress("DEPRECATION")
+                                            android.provider.MediaStore.Images.Media.getBitmap(
+                                                context.contentResolver,
+                                                android.net.Uri.parse(imageUri)
+                                            )
+                                        } else {
+                                            android.graphics.BitmapFactory.decodeFile(
+                                                File(imageUri).absolutePath
+                                            )
+                                        }
+
+                                        if (
+                                            bitmap != null &&
+                                            canvasSize.width > 0 &&
+                                            canvasSize.height > 0
+                                        ) {
+
+                                            val bmp32 = bitmap.copy(
+                                                android.graphics.Bitmap.Config.ARGB_8888,
+                                                true
+                                            )
+
+                                            val mmToPixelRatio =
+                                                edu.ibu.termotabip.utils.RulerUtils
+                                                    .calculatePixelToMmRatioFromScalpel(bmp32)
+
+                                            if (mmToPixelRatio > 0) {
+
+                                                val displayedWidth =
+                                                    canvasSize.width.toDouble()
+
+                                                val displayedHeight =
+                                                    canvasSize.height.toDouble()
+
+                                                val scaleX =
+                                                    bitmap.width.toDouble() / displayedWidth
+
+                                                val scaleY =
+                                                    bitmap.height.toDouble() / displayedHeight
+
+                                                val scaleFactor =
+                                                    Math.min(scaleX, scaleY)
+
+                                                val pixelAreaOnScreen =
+                                                    calculatePolygonAreaInPixels(points)
+
+                                                val pixelAreaOnOriginalBitmap =
+                                                    pixelAreaOnScreen *
+                                                            (scaleFactor * scaleFactor)
+
+                                                val realAreaMm2 =
+                                                    pixelAreaOnOriginalBitmap *
+                                                            (mmToPixelRatio * mmToPixelRatio)
+
+                                                finalArea = realAreaMm2 / 100.0
+
+                                                val minX = points.minOf { it.x }
+                                                val maxX = points.maxOf { it.x }
+                                                val minY = points.minOf { it.y }
+                                                val maxY = points.maxOf { it.y }
+
+                                                finalWidth =
+                                                    ((maxX - minX) *
+                                                            scaleFactor *
+                                                            mmToPixelRatio) / 10.0
+
+                                                finalHeight =
+                                                    ((maxY - minY) *
+                                                            scaleFactor *
+                                                            mmToPixelRatio) / 10.0
+
+                                                calculatedResult = String.format(
+                                                    "Gerçek Alan: %.2f cm²\nBoyutlar: %.1f x %.1f cm",
+                                                    finalArea,
+                                                    finalWidth,
+                                                    finalHeight
+                                                )
+
+                                            } else {
+                                                calculatedResult =
+                                                    "HATA: Referans nesne (bisturi) bulunamadı."
+                                            }
+
+                                        } else {
+                                            calculatedResult =
+                                                "HATA: Görsel işlenemedi."
+                                        }
+
+                                    } catch (e: Exception) {
+                                        calculatedResult =
+                                            "HATA: İşlem başarısız."
+                                    }
+                                },
+
+                                modifier = Modifier
+                                    .weight(1.5f)
+                                    .height(54.dp),
+
+                                enabled = points.size > 2,
+                                shape = RoundedCornerShape(16.dp)
+
+                            ) {
+                                Text(
+                                    "Alanı Hesapla",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.sp
+                                )
+                            }
                         }
                     }
                 }

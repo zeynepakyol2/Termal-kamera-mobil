@@ -30,7 +30,7 @@ class WoundAnalysisViewModel : ViewModel() {
             model = WoundAnalysisModel(context.applicationContext)
             val (v, e, r) = model!!.checkAvailability()
             Log.i(TAG, "Model init tamamlandı — var_yok:$v evre:$e risk:$r")
-            if (!v || !e || !r) {
+            /*if (!v || !e || !r) {
                 _uiState.value = _uiState.value.copy(
                     errorMessage = buildString {
                         append("Eksik model dosyası: ")
@@ -39,7 +39,7 @@ class WoundAnalysisViewModel : ViewModel() {
                         if (!r) append("risk_tespit.tflite")
                     }
                 )
-            }
+            }*/
         }
     }
 

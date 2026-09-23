@@ -210,18 +210,15 @@ fun ResultScreen(
                     }
                 }
             }
-
-            if (result != null && result.isSuccess && result.presenceResult?.hasWound == true) {
+            if (result != null && result.isSuccess && uiState.capturedImageUri != null) {
                 item {
                     Button(
-                        onClick = {
-                            showMeasurementDialog = true
-                        },
+                        onClick = { showMeasurementDialog = true },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 8.dp), // Altındaki PDF butonuyla arasına boşluk koyar
+                            .padding(bottom = 8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary // Senin temanın mavi/turuncu ana rengini alır
+                            containerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
                         Text("Yara Boyutunu Ölç", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)

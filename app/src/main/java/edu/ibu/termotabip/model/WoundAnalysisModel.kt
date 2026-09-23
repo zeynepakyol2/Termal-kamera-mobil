@@ -18,9 +18,16 @@ private const val TAG = "WoundAnalysisModel"
 // ─────────────────────────────────────────────
 // Tek bir TFLite modelini sarmalayan yardımcı sınıf
 // ─────────────────────────────────────────────
+enum class NormalizationMode {
+    RESCALE_0_1,
+    MOBILENET_TF,
+    RAW_0_255
+}
+
 class TFLiteModel(
     private val context: Context,
-    private val modelFileName: String
+    private val modelFileName: String,
+    private val normalizationMode: NormalizationMode = NormalizationMode.RESCALE_0_1
 ) {
     private var interpreter: Interpreter? = null
     var inputWidth = 224
@@ -92,6 +99,7 @@ class TFLiteModel(
         }
     }
 
+
     private fun toByteBuffer(bitmap: Bitmap): ByteBuffer {
         val isUint8 = interpreter?.getInputTensor(0)?.dataType() == DataType.UINT8
         val bytes   = if (isUint8) 1 else 4
@@ -105,12 +113,25 @@ class TFLiteModel(
         for (px in pixels) {
             val r = Color.red(px);  val g = Color.green(px);  val b = Color.blue(px)
             val gray = r * 0.299f + g * 0.587f + b * 0.114f
+
             if (isUint8) {
+                // Quantized modelde ham piksel değeri (0-255) beklenir,
+                // dequantization interpreter tarafından model içindeki
+                // scale/zero_point'e göre otomatik yapılır.
                 if (inputChannels == 1) buf.put(gray.toInt().toByte())
                 else { buf.put(r.toByte()); buf.put(g.toByte()); buf.put(b.toByte()) }
             } else {
-                if (inputChannels == 1) buf.putFloat(gray / 255f)
-                else { buf.putFloat(r / 255f); buf.putFloat(g / 255f); buf.putFloat(b / 255f) }
+                fun normalize(v: Float): Float = when (normalizationMode) {
+                    NormalizationMode.RESCALE_0_1 -> v / 255f
+                    NormalizationMode.MOBILENET_TF -> v / 127.5f - 1f
+                    NormalizationMode.RAW_0_255 -> v
+                }
+                if (inputChannels == 1) buf.putFloat(normalize(gray))
+                else {
+                    buf.putFloat(normalize(r.toFloat()))
+                    buf.putFloat(normalize(g.toFloat()))
+                    buf.putFloat(normalize(b.toFloat()))
+                }
             }
         }
         buf.rewind()
@@ -131,15 +152,27 @@ class TFLiteModel(
 class WoundAnalysisModel(private val context: Context) {
 
     companion object {
-        const val MODEL_VAR_YOK = "wound_detection.tflite"
-        const val MODEL_EVRE    = "wound_stage.tflite"
-        const val MODEL_RISK    = "wound_risk.tflite"
+        const val MODEL_VAR_YOK = "wound_detection_mobilenetv2_2026-09-16_final.tflite"
+        const val MODEL_EVRE    = "wound_stage_model_20260918_final.tflite"
+        const val MODEL_RISK    = "wound_risk_model_20260918_final.tflite"
 
     }
 
-    private val varYokModel = TFLiteModel(context, MODEL_VAR_YOK)
-    private val evreModel   = TFLiteModel(context, MODEL_EVRE)
-    private val riskModel   = TFLiteModel(context, MODEL_RISK)
+    private val varYokModel = TFLiteModel(
+        context,
+        MODEL_VAR_YOK,
+        normalizationMode = NormalizationMode.MOBILENET_TF   // MobileNetV2 tabanlı → [-1,1]
+    )
+    private val evreModel = TFLiteModel(
+        context,
+        MODEL_EVRE,
+        normalizationMode = NormalizationMode.MOBILENET_TF     // custom CNN varsayımı → [0,1]
+    )
+    private val riskModel = TFLiteModel(
+        context,
+        MODEL_RISK,
+        normalizationMode = NormalizationMode.RAW_0_255
+    )
 
 
     /**
